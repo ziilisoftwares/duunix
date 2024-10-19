@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Työvuorosuunnitteluohjelma</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #schedule { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+        .day { border: 1px solid #ccc; padding: 10px; min-height: 150px; }
+        .shift { border: 1px solid #007bff; background-color: #e7f3ff; padding: 5px; margin: 5px; cursor: move; }
+        .worker { border: 1px solid #28a745; background-color: #d4edda; padding: 5px; margin: 5px; cursor: grab; }
+        .input-group { margin: 10px 0; }
+        #workers, #shift-list { margin-top: 20px; }
+        .droppable { min-height: 50px; border: 1px dashed #ccc; padding: 5px; }
+        .button { margin-top: 10px; padding: 5px 10px; cursor: pointer; background-color: #007bff; color: white; border: none; }
+        .summary { margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table, th, td { border: 1px solid black; padding: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>Työvuorosuunnittelu</h1>
+
+    <div class="input-group">
+        <h3>Lisää Työvuoro</h3>
+        <label>Vuoron nimi: </label>
+        <input type="text" id="shiftName">
+        <label>Päivä: </label>
+        <select id="shiftDay">
+            <option value="Maanantai">Maanantai</option>
+            <option value="Tiistai">Tiistai</option>
+            <option value="Keskiviikko">Keskiviikko</option>
+            <option value="Torstai">Torstai</option>
+            <option value="Perjantai">Perjantai</option>
+            <option value="Lauantai">Lauantai</option>
+            <option value="Sunnuntai">Sunnuntai</option>
+        </select>
+        <label>Aloitusaika: </label>
+        <input type="time" id="startTime">
+        <label>Lopetusaika: </label>
+        <input type="time" id="endTime">
+
+        <div class="input-group">
+            <h3>Kopioi muille päiville:</h3>
+            <label><input type="checkbox" id="copyMonday" value="Maanantai"> Maanantai</label>
+            <label><input type="checkbox" id="copyTuesday" value="Tiistai"> Tiistai</label>
+            <label><input type="checkbox" id="copyWednesday" value="Keskiviikko"> Keskiviikko</label>
+            <label><input type="checkbox" id="copyThursday" value="Torstai"> Torstai</label>
+            <label><input type="checkbox" id="copyFriday" value="Perjantai"> Perjantai</label>
+            <label><input type="checkbox" id="copySaturday" value="Lauantai"> Lauantai</label>
+            <label><input type="checkbox" id="copySunday" value="Sunnuntai"> Sunnuntai</label>
+        </div>
+
+        <button onclick="addShift()">Lisää Vuoro</button>
+    </div>
+
+    <div id="shift-list">
+        <h3>Luodut vuorot</h3>
+        <div id="schedule"></div>
+    </div>
+
+    <div class="input-group">
+        <h3>Lisää Työntekijä</h3>
+        <input type="text" id="workerName">
+        <button onclick="addWorker()">Lisää Työntekijä</button>
+    </div>
+
+    <div id="workers">
+        <h3>Työntekijät</h3>
+    </div>
+
+    <button class="button" onclick="autoFill()">Täytä kaikki vuorot automaattisesti</button>
+
+    <div class="summary">
+        <h3>Työntekijöiden työajat</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Työntekijä</th>
+                    <th>Työtunnit</th>
+                </tr>
+            </thead>
+            <tbody id="summaryTable">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const shifts = [];
+        const workers = [];
+        const schedule = document.getElementById('schedule');
+        const workersContainer = document.getElementById('workers');
+        const summaryTable = document.getElementById('summaryTable');
+
+        function addShift() {
+            const name = document.getElementById('shiftName').value;
+            const day = document.getElementById('shiftDay').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+
+            if (!name || !startTime || !endTime) {
+                alert("Täytä kaikki kentät!");
+                return;
+            }
+
+            // Lisää vuoro valitulle päivälle
+            const shift = {
+                name,
+                day,
+                startTime,
+                endTime,
+                worker: null
+            };
+
+            shifts.push(shift);
+
+            // Tarkistetaan, mitkä päivät valittiin kopiointia varten
+            const copyDays = [
+                { id: "copyMonday", value: "Maanantai" },
+                { id: "copyTuesday", value: "Tiistai" },
+                { id: "copyWednesday", value: "Keskiviikko" },
+                { id: "copyThursday", value: "Torstai" },
+                { id: "copyFriday", value: "Perjantai" },
+                { id: "copySaturday", value: "Lauantai" },
+                { id: "copySunday", value: "Sunnuntai" }
+            ];
+
+            copyDays.forEach(dayObj => {
+                if (document.getElementById(dayObj.id).checked) {
+                    const copiedShift = { ...shift, day: dayObj.value };
+                    shifts.push(copiedShift);
+                }
+            });
+
+            updateSchedule();
+            updateSummary();
+        }
+
+        function addWorker() {
+            const workerName = document.getElementById('workerName').value;
+            if (!workerName) {
+                alert("Anna työntekijän nimi");
+                return;
+            }
+
+            const workerDiv = document.createElement("div");
+            workerDiv.className = "worker";
+            workerDiv.textContent = workerName;
+            workerDiv.draggable = true;
+            workerDiv.ondragstart = function(event) {
+                event.dataTransfer.setData("text/plain", workerName);
+            };
+
+            workers.push(workerName);
+            workersContainer.appendChild(workerDiv);
+        }
+
+        function updateSchedule() {
+            schedule.innerHTML = "";
+            const days = ["Maanantai", "Tiistai", "Keskiviikko", "Torstai", "Perjantai", "Lauantai", "Sunnuntai"];
+            
+            days.forEach(day => {
+                const dayDiv = document.createElement("div");
+                dayDiv.className = "day";
+                dayDiv.innerHTML = `<h3>${day}</h3>`;
+                const dayShifts = shifts.filter(shift => shift.day === day);
+
+                dayShifts.forEach(shift => {
+                    const shiftDiv = document.createElement("div");
+                    shiftDiv.className = "shift droppable";
+                    shiftDiv.innerHTML = `${shift.name} (${shift.startTime} - ${shift.endTime})`;
+                    shiftDiv.ondrop = function(event) {
+                        event.preventDefault();
+                        const workerName = event.dataTransfer.getData("text/plain");
+                        shift.worker = workerName;
+                        updateSchedule();
+                        updateSummary();
+                    };
+                    shiftDiv.ondragover = function(event) {
+                        event.preventDefault();
+                    };
+
+                    if (shift.worker) {
+                        shiftDiv.innerHTML += `<br><strong>${shift.worker}</strong>`;
+                    }
+
+                    dayDiv.appendChild(shiftDiv);
+                });
+
+                schedule.appendChild(dayDiv);
+            });
+        }
+
+        function calculateDuration(start, end) {
+            const [startH, startM] = start.split(":").map(Number);
+            const [endH, endM] = end.split(":").map(Number);
+            return (endH + endM / 60) - (startH + startM / 60);
+        }
+
+        function updateSummary() {
+            const workerHours = {};
+
+            workers.forEach(worker => {
+                workerHours[worker] = 0;
+            });
+
+            shifts.forEach(shift => {
+                if (shift.worker) {
+                    const duration = calculateDuration(shift.startTime, shift.endTime);
+                    workerHours[shift.worker] += duration;
+                }
+            });
+
+            summaryTable.innerHTML = "";
+
+            for (const worker in workerHours) {
+                const row = document.createElement("tr");
+                row.innerHTML = `<td>${worker}</td><td>${workerHours[worker].toFixed(2)} tuntia</td>`;
+                summaryTable.appendChild(row);
+            }
+        }
+
+        function autoFill() {
+            let index = 0;
+            shifts.forEach(shift => {
+                shift.worker = workers[index % workers.length];
+                index++;
+            });
+            updateSchedule();
+            updateSummary();
+        }
+    </script>
+</body>
+</html>
